@@ -1,138 +1,234 @@
-import os
-import subprocess
-import re
-import pandas as pd
-from pathlib import Path
-from shiny import App, ui, reactive, render, Inputs, Outputs, Session
-import shutil
 import zipfile
-import logging
+import sys
+import os
+import shutil
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-# Serve static files from the 'www' directory
-# Define UI
-app_ui = ui.page_fluid(
-    ui.div(
-        ui.img(src="/static/logo.png", height='100px', style="display: block; margin-left: auto; margin-right: auto;"),
-        ui.hr()
-    ),
-    ui.layout_sidebar(
-        ui.panel_sidebar(
-            ui.input_file("image_zip", "Choose a ZIP file with images", multiple=False, accept=['.zip'], width='100%'),
-            ui.input_action_button("process_button", "Run YOLO Model", width='100%')
-        ),
-        ui.panel_main(
-            ui.h2("Egg Counting: Fertilized vs Unfertilized"),
-            ui.markdown(
-                """
-                **The tool allows users to count the number of fertilized vs unfertilized eggs.**
-                
-                - The images will be saved in the `ProcessedImages/TestImages2/predict/PredImages` folder.
-                - To generate predictions, upload a `ZIP` file containing images.
-                - Upon clicking the 'Run YOLO Model' button, the images will be processed using YOLO for object detection and a bounding box script.
-                - The processed images will be saved in a specific directory.
-                """
-            ),
-            ui.output_text_verbatim("process_status"),
-            ui.output_data_frame("results_table")
-        )
-    ),
-    # Footer with logo and copyright
-    ui.div(
-        ui.markdown(
-            """
-            <br>**Copyright AGGRC 2024**<br>
-            **Authors:**
-            Gopal Srivastava; Monika Pandey; Kiran Bist; Dr Yue Liu* and Prof Peter Wolenski*
-            - *: Corresponding Authors
-            """
-        ),
-        style="text-align: left; padding: 2px; position: fixed;bottom: 0px; width: 100%; background-color: grey;"
-    )
-)
+from PyQt6.QtCore import Qt, pyqtSlot
+from YOLOtesting import runDetection
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel, QPushButton,
+    QVBoxLayout,
+    QWidget,)
+from PyQt6.QtGui import QIcon, QPixmap
 
-# Define server logic
-def server(input: Inputs, output: Outputs, session: Session):
-    status_message = reactive.Value("")
-    results = reactive.Value(pd.DataFrame(columns=["Image", "Fertilized (F)", "Unfertilized (UF)"]))
+from UIComponents import CustomDialog, TableView
 
-    @reactive.Effect
-    @reactive.event(input.process_button)
-    async def process_images():
-        uploaded_file = input.image_zip()
-        if uploaded_file:
-            zip_path = uploaded_file[0]['datapath']
-            status_message.set("Processing images...")
-            await reactive.flush()  # Force UI update
 
-            # Define the destination folder
-            dest_folder = "ProcessedImages/TestImages2"
-            if os.path.exists(dest_folder):
-                shutil.rmtree(dest_folder)
-            os.makedirs(dest_folder, exist_ok=True)
+class AppGUI(QWidget):
+    INTRO_TEXT = """
+    <h2>Egg Counting: Fertilized vs Unfertilized</h2>
+    <br><br>
+    <b>The tool allows users to count the number of
+    fertilized vs unfertilized eggs.</b>
+    <br><br>
+    <ol>
+    <li>To generate predictions, upload a ZIP file containing images</li>
+    <li>Upon clicking the 'Run YOLO Model' button, the images will be processed
+     using YOLO for object detection and a bounding box script.</li>
+    <li>The predicted classifications will be shown here,
+     along with annotated images</li>
+    </ol>
+    """
 
-            # Extract the zip file to the specified folder without creating a new folder
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                for member in zip_ref.namelist():
-                    filename = os.path.basename(member)
-                    # Skip directories and unwanted files
-                    if not filename or filename.startswith('._') or member.startswith('__MACOSX/'):
-                        continue
-                    source = zip_ref.open(member)
-                    target = open(os.path.join(dest_folder, filename), "wb")
-                    with source, target:
-                        shutil.copyfileobj(source, target)
-
-            try:
-                # Run YOLOtesting.py and capture output
-                yolo_script = "YOLOtesting.py"
-                logging.debug(f"Running YOLO script: {yolo_script}")
-                result = subprocess.run(["python3.11", yolo_script], capture_output=True, text=True, check=True)
-                yolo_output = result.stdout
-                logging.debug(f"YOLO output: {yolo_output}")
-            except subprocess.CalledProcessError as e:
-                logging.error(f"Error running YOLO script: {e}")
-                status_message.set(f"Error running YOLO script: {e}")
-                return
-
-            # Parse YOLO output
-            pattern = re.compile(r"(\d+)/(\d+)\s+(.+):.+\s(\d+)\sfs,\s(\d+)\sufs")
-            matches = pattern.findall(yolo_output)
-            if matches:
-                data = []
-                for match in matches:
-                    image_info = {
-                        "Image": match[2].split("/")[-1],
-                        "Fertilized (F)": int(match[3]),
-                        "Unfertilized (UF)": int(match[4])
-                    }
-                    data.append(image_info)
-                df = pd.DataFrame(data)
-                results.set(df)
-
-            try:
-                # Run boundingbox.py
-                bbox_script = "DisplayPredboundingbox.sh"
-                logging.debug(f"Running bounding box script: {bbox_script}")
-                subprocess.run(["sh", bbox_script], check=True)
-            except subprocess.CalledProcessError as e:
-                logging.error(f"Error running bounding box script: {e}")
-                status_message.set(f"Error running bounding box script: {e}")
-                return
-
-            status_message.set(f"Processing completed.\nPlease go to ProcessedImages/TestImages2/predict/PredImages")
+    def __init__(self, appController):
+        super().__init__()
+        self.controller = appController
+        self.title = 'YOLO Egg Detection'
+        self.left = 10
+        self.top = 10
+        screen = self.screen()
+        if screen:
+            print('screen sizes:', screen.availableSize())
+            width = screen.availableSize().width()
+            height = screen.availableSize().height()
+            self.resize(int(width*0.8), int(height*0.8))
         else:
-            status_message.set("No file selected.")
+            self.resize(700, 550)
+        self.setWindowIcon(QIcon("LSU-logo.png"))
 
-    @output
-    @render.text
-    def process_status():
-        return status_message.get()
+        self.initUI()
 
-    @output
-    @render.data_frame
-    def results_table():
-        return results.get()
+    def initUI(self):
+        self.setWindowTitle(self.title)
 
-app = App(app_ui, server)
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(30)
+        self.setLayout(layout)
+
+        split_panel = QHBoxLayout()
+        layout.addLayout(split_panel)
+
+        left_panel = QVBoxLayout()
+        split_panel.addLayout(left_panel)
+
+        upload_button = QPushButton('Upload Zip File')
+        upload_button.setToolTip('Select zip file with images')
+        upload_button.clicked.connect(self.onUploadZipFile)
+
+        run_model_button = QPushButton('Run YOLO Model')
+        run_model_button.clicked.connect(self.controller.runDetectionModel)
+
+        left_panel.addWidget(upload_button)
+        left_panel.addWidget(run_model_button)
+
+        right_panel = QVBoxLayout()
+        split_panel.addLayout(right_panel)
+
+        intro_text = QLabel()
+        intro_text.setText(AppGUI.INTRO_TEXT)
+        intro_text.setStyleSheet("padding-left:30px;")
+        intro_text.setWordWrap(True)
+        right_panel.addWidget(intro_text)
+
+        self.container = layout
+        self.left_panel = left_panel
+        self.right_panel = right_panel
+
+        self.show()
+
+    def _addWidget(self, widget):
+        layout = self.layout()
+        if layout:
+            layout.addWidget(widget)
+
+    def addPredictionsTable(self, table: TableView):
+        self.left_panel.addWidget(table)
+
+    @pyqtSlot()
+    def _nextPredictionImage(self):
+        idx = (self.annotated_img_idx + 1) % self.annotated_img_ct
+        self.annotated_img_idx = idx
+        for image_path in os.listdir(self.annotated_dir):
+            if os.path.isdir(image_path):
+                continue
+            if idx > 0:
+                idx -= 1
+                continue
+            self.annotated_label_container.setText(image_path)
+            self.annotated_img_container.setPixmap(QPixmap(os.path.join(
+                self.annotated_dir, image_path)).scaled(700, 700))
+            break
+
+    @pyqtSlot()
+    def _prevPredictionImage(self):
+        idx = (self.annotated_img_idx -
+               1) if self.annotated_img_idx > 0 else self.annotated_img_ct - 1
+        self.annotated_img_idx = idx
+        for image_path in os.listdir(self.annotated_dir):
+            if os.path.isdir(image_path):
+                continue
+            if idx > 0:
+                idx -= 1
+                continue
+            self.annotated_label_container.setText(image_path)
+            self.annotated_img_container.setPixmap(QPixmap(os.path.join(
+                self.annotated_dir, image_path)).scaled(700, 700))
+            break
+
+    def addPredictionsImages(self, parent_directory: str):
+        if (not os.path.exists(parent_directory) or
+                not os.path.isdir(parent_directory)):
+            return
+        annotated_directory = os.path.join(
+            parent_directory, 'annotated_images')
+        self.annotated_dir = annotated_directory
+        self.annotated_img_container = QLabel()
+        self.annotated_label_container = QLabel()
+        self.annotated_img_idx = -1
+        self.annotated_img_ct = 0
+        for image_path in os.listdir(annotated_directory):
+            if not os.path.isdir(image_path):
+                self.annotated_img_ct += 1
+        self._nextPredictionImage()
+        nav_button_group = QHBoxLayout()
+        self.right_panel.addLayout(nav_button_group)
+
+        prev_image_button = QPushButton("<< Prev")
+        next_image_button = QPushButton("Next >>")
+        next_image_button.clicked.connect(self._nextPredictionImage)
+        prev_image_button.clicked.connect(self._prevPredictionImage)
+        nav_button_group.addWidget(prev_image_button)
+        nav_button_group.addWidget(next_image_button)
+
+        self.right_panel.addWidget(self.annotated_label_container)
+        self.right_panel.addWidget(self.annotated_img_container)
+
+    def openFileNameDialog(self):
+        dialog = QFileDialog()
+        options = QFileDialog.options(dialog)
+        fileName, _ = QFileDialog.getOpenFileName(
+            self, "QFileDialog.getOpenFileName()",
+            "", "Zip File (*.zip)", options=options)
+        if fileName:
+            self.controller.extractZipFile(fileName)
+
+    def onUploadZipFile(self):
+        self.openFileNameDialog()
+
+    def showImagesNotLoadedError(self):
+        errorDialog = CustomDialog()
+        print(errorDialog.exec())
+
+
+class App():
+    def __init__(self):
+        self.gui = AppGUI(self)
+        self.working_dir = ".YOLOEggDetection"
+        self.images_dir = os.path.join(self.working_dir, 'test_images')
+        self.images_loaded = False
+        if os.path.exists(self.working_dir):
+            shutil.rmtree(self.working_dir)
+        os.makedirs(self.images_dir, exist_ok=True)
+
+    def extractZipFile(self, zip_path):
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            for member in zip_ref.namelist():
+                filename = os.path.basename(member)
+                # Skip directories and unwanted files
+                if (not filename
+                    or filename.startswith('._')
+                        or member.startswith('__MACOSX/')):
+                    continue
+                source = zip_ref.open(member)
+                target = open(os.path.join(self.images_dir, filename), "wb")
+                print('saving files in ', os.path.join(
+                    self.working_dir, filename))
+                with source, target:
+                    shutil.copyfileobj(source, target)
+            self.images_loaded = True
+
+    def runDetectionModel(self):
+        if not self.images_loaded:
+            self.gui.showImagesNotLoadedError()
+        else:
+            print('Running detection model')
+            predictions = runDetection(self.images_dir)
+            pred_table = TableView(predictions, len(predictions), 3)
+            self.gui.addPredictionsTable(pred_table)
+            self.gui.addPredictionsImages(self.working_dir)
+            print('Done running detection', predictions)
+
+
+if __name__ == '__main__':
+    q_app = QApplication(sys.argv)
+    q_app.setStyleSheet(
+        """
+        QPushButton {
+            border: none;
+            outline: none;
+            background-color: qlineargradient(x1: 0, y1: 0, x2: 0,
+                                y2: 1, stop: 0 #f6f7fa, stop: 1 #dadbde);
+            min-width: 80px;
+            color: #1e1e1e;
+            max-width: 250px;
+            padding: 15px 20px;
+            }
+        """
+    )
+    app = App()
+
+    sys.exit(q_app.exec())
