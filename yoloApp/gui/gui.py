@@ -5,6 +5,7 @@ import os
 
 from PyQt6.QtCore import (QSize, Qt,  pyqtSlot)
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -16,11 +17,13 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QIcon, QMovie, QPixmap, QFont, QFontDatabase
 
 from gui.UIComponents import CustomDialog, TableView, ProgressBar
+import qtawesome as qta
 
 UPLOAD_BUTTON_DESC = "To get started, upload a zip file"
 UPLOAD_BUTTON_LABEL = "Upload Zip File"
 UPLOAD_BUTTON_TOOLTIP = "Select zip file with images"
-RUN_MODEL_BUTTON_LABEL = "Run YOLO Model"
+RUN_MODEL_BUTTON_LABEL = "Run YOLO Predictions"
+MODEL_SELECTION_TEXT = "Selected model:"
 EXTRACT_PROGRESS_TEXT = "Extracting images..."
 MODEL_PROGRESS_TEXT = "Running YOLO model on images..."
 ANNOTATION_PROGRESS_TEXT = "Annotating images..."
@@ -57,9 +60,9 @@ class AppGUI(QWidget):
         if screen:
             width = screen.availableSize().width()
             height = screen.availableSize().height()
-            self.setFixedSize(int(width*0.8), int(height*0.8))
+            self.setFixedSize(min(1200,int(width*0.8)), min(800,int(height*0.8)))
         else:
-            self.setFixedSize(700, 550)
+            self.setFixedSize(1200, 800)
         self.setSizePolicy(QSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
         self.setWindowIcon(
@@ -69,6 +72,7 @@ class AppGUI(QWidget):
         self.right_panel = None
         self.intro_text = None
         self.run_model_button = None
+        self.select_model_dropdown = None
 
         self.predictionResultsLoaded = False
         self.annotated_img_container = None
@@ -81,9 +85,9 @@ class AppGUI(QWidget):
         self.detection_progress = None
         self.annotation_progress = None
 
-        self.initUI()
+        self._initUI()
 
-    def initUI(self):
+    def _initUI(self):
         self._initFonts()
         self.setWindowTitle(self.title)
 
@@ -99,12 +103,39 @@ class AppGUI(QWidget):
         split_panel.addWidget(right_panel, stretch=2)
 
         self.container = layout
+
         # self._initData()
-        self.setStyleSheet(
-            '''
-            QFrame {
-                }
-            QPushButton {
+        static_path = os.path.join(os.path.dirname(
+            os.path.realpath(__file__)), 'static')
+        stylesheet = '''
+            QComboBox {{
+                border: none;
+                outline: none;
+                background-color:#fff;
+                min-width: 80px;
+                color: #1e1e1e;
+                max-width: 80px;
+                padding: 5px;
+            }}
+            QComboBox::drop-down {{
+                outline: none;
+                border: none;
+                color: #1e1e1e;
+            }}
+            QComboBox QAbstractItemView {{
+                color: #1e1e1e;
+                background-color: #fff;
+            }}
+            QComboBox QAbstractItemView:hover {{
+                color: #fff;
+                background-color: #1e1e1e;
+            }}
+            QComboBox::down-arrow {{
+                image: url({0});
+                width: 20px;
+                height: 15px;
+            }}
+            QPushButton {{
                 border: none;
                 outline: none;
                 background-color:#fff;
@@ -112,12 +143,17 @@ class AppGUI(QWidget):
                 color: #1e1e1e;
                 max-width: 200px;
                 padding: 15px 20px;
-            }
-            '''
+            }}
+            '''.format(os.path.join(static_path, 'down_arrow.png'))
+        self.setStyleSheet(
+            stylesheet
         )
         self.show()
 
     def _initLeftPanel(self):
+        '''
+        Initialize the left panel on the main UI
+        '''
         left_panel = QFrame()
         left_panel_layout = QVBoxLayout()
         left_panel_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -129,22 +165,42 @@ class AppGUI(QWidget):
         upload_button.setToolTip(UPLOAD_BUTTON_TOOLTIP)
         upload_button.clicked.connect(self.onUploadZipFile)
 
+        model_selection_frame = QFrame()
+        model_selection_layout = QHBoxLayout()
+        model_selection_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        model_selection_frame.setLayout(model_selection_layout)
+
+        model_selection_label = QLabel(MODEL_SELECTION_TEXT)
+        select_model_dropdown = QComboBox()
+        select_model_dropdown.addItems(self.controller.getAvailableModels())
+        select_model_dropdown.currentIndexChanged.connect(
+            self._onModelSelectionChange)
         run_model_button = QPushButton(RUN_MODEL_BUTTON_LABEL)
         run_model_button.clicked.connect(self.controller.runDetectionModel)
         self.run_model_button = run_model_button
-        self.toggleRunModelButton(False)
+
+        model_selection_layout.addWidget(
+            model_selection_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        model_selection_layout.addWidget(select_model_dropdown)
 
         left_panel_layout.addWidget(upload_label)
         left_panel_layout.addWidget(
             upload_button, alignment=Qt.AlignmentFlag.AlignCenter)
         left_panel_layout.addWidget(
+            model_selection_frame)
+        left_panel_layout.addWidget(
             run_model_button, alignment=Qt.AlignmentFlag.AlignCenter)
         self.run_model_button = run_model_button
+        self.select_model_dropdown = select_model_dropdown
         self.upload_button = upload_button
         self.left_panel = left_panel_layout
+        self.toggleRunModelButton(False)
         return left_panel
 
     def _initRightPanel(self):
+        '''
+        Initialize the right panel on the main UI
+        '''
         right_panel = QFrame()
         right_panel_layout = QVBoxLayout()
         right_panel_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -261,7 +317,13 @@ class AppGUI(QWidget):
                 )
             self.pred_table.cellClicked.connect(self._onPredictionsTableClick)
 
-    @pyqtSlot(int, int)
+    @pyqtSlot(int)
+    def _onModelSelectionChange(self, idx):
+        '''
+        '''
+        self.controller.setModel(idx)
+
+    @ pyqtSlot(int, int)
     def _onPredictionsTableClick(self, row, _):
         '''
         Highlight the entire table row when any cell is clicked.
@@ -272,7 +334,7 @@ class AppGUI(QWidget):
             self.pred_table.selectRow(row)
             self.selectPredictionImage(row)
 
-    @pyqtSlot()
+    @ pyqtSlot()
     def _saveTableAsCSV(self):
         saveDirectory = self.openDirectorySelectDialog()
         if self.pred_table:
@@ -387,15 +449,21 @@ class AppGUI(QWidget):
     def toggleRunModelButton(self, enable=None):
         '''
         Enable/Disable the "Run Model" button on the UI
+        Also enables/disables the model selection dropdown
         '''
         if enable is None:
-            enable = not self.run_model_button
-        if self.run_model_button:
+            enable = not self.run_model_button or not self.select_model_dropdown
+        if self.run_model_button and self.select_model_dropdown:
             self.run_model_button.setEnabled(enable)
+            self.select_model_dropdown.setEnabled(enable)
             if enable:
                 self.run_model_button.setStyleSheet("background-color:#fff")
+                self.select_model_dropdown.setStyleSheet(
+                    "background-color:#fff")
             else:
                 self.run_model_button.setStyleSheet("background-color:gray")
+                self.select_model_dropdown.setStyleSheet(
+                    "background-color:gray")
 
     def openFileNameDialog(self):
         '''
