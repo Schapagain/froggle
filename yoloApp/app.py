@@ -16,12 +16,12 @@ from PyQt6.QtWidgets import (
 
 class App():
     def __init__(self):
-        self.working_dir = ".YOLOEggDetection"
+        self.working_dir = os.path.join(os.path.dirname(__file__),".YOLOEggDetection")
         self.valid_extensions = [".jpg", ".jpeg", ".png"]
         self.images_dir = os.path.join(self.working_dir, 'test_images')
         self.images_loaded = False
         self.images_loaded_count = 0
-        self.available_models = ["Adam-W", "SGD", "Adam"]
+        self.available_models = ["SGD", "Adam-W", "Adam"]
         self.selected_model_idx = 0
         self.threadpool = QThreadPool()
         print("Multithreading supported. Max available threads = {}".format(
