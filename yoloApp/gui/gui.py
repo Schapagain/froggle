@@ -219,7 +219,7 @@ class AppGUI(QWidget):
                     os.path.realpath(__file__)),
                 "static/loading.gif"))
         loading_widget.setMovie(loading_animation)
-        loading_animation.setScaledSize(QSize(200, 150))
+        loading_animation.setScaledSize(QSize(64, 64))
         loading_animation.setSpeed(100)
         self.loading_animation = loading_animation
         self.loading_widget = loading_widget
