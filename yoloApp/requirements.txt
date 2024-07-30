@@ -1,6 +1,6 @@
-faicons
-shiny
-shinywidgets
 plotly
 pandas
-ridgeplot
+numpy
+ultralytics
+PyQt6
+qtawesome
