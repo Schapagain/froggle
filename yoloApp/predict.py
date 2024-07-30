@@ -3,9 +3,9 @@ import typing
 import numpy as np
 from typing import Callable
 from ultralytics import YOLO
-model_sgd = YOLO("./model/best.pt")
-model_adam = YOLO("./model/best.pt")
-model_adam_w = YOLO("./model/best.pt")
+model_sgd = YOLO(os.path.join(os.path.dirname(__file__),"./model/sgd.pt"))
+model_adam = YOLO(os.path.join(os.path.dirname(__file__),"./model/adam.pt"))
+model_adam_w = YOLO(os.path.join(os.path.dirname(__file__),"./model/adam_w.pt"))
 
 
 # Log initial message
