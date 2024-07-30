@@ -1,50 +1,65 @@
-import cv2
-import matplotlib.pyplot as plt
-import os, sys
-
-# Create a prediction folder
-pred_image_path = "ProcessedImages/predict/PredImages"
-os.makedirs(pred_image_path, exist_ok=True)
-
-# Load the image
-image_path = sys.argv[1]
-name = os.path.splitext(image_path)[0]
-name = name.split("/")[-1]
-print(name)
-image = cv2.imread(image_path)
-image_height, image_width, _ = image.shape
+import os
+from PIL import Image, ImageDraw
+import typing
+from typing import Callable
 
 
-# Load and parse the text file
-coordinates_path = sys.argv[2]
-with open(coordinates_path, 'r') as file:
-    lines = file.readlines()
+def centerToBoundingBox(
+    center_coords: tuple[int, int], size: tuple[int, int]
+) -> tuple[int, int, int, int]:
+    center_x, center_y = center_coords
+    width, height = size
+    top_left_x = round(center_x - width / 2)
+    top_left_y = round(center_y - height / 2)
+    bot_right_x = round(center_x + width / 2)
+    bot_right_y = round(center_y + height / 2)
+    return (top_left_x, top_left_y, bot_right_x, bot_right_y)
 
-# Draw bounding boxes
-for line in lines:
-    label, x_center, y_center, width, height, confidence = map(float, line.strip().split())
-    # Convert normalized coordinates to actual coordinates
-    x_center *= image_width
-    y_center *= image_height
-    box_width = width * image_width
-    box_height = height * image_height
-		# Calculate the top-left corner of the bounding box
-    top_left_x = int(x_center - box_width / 2)
-    top_left_y = int(y_center - box_height / 2)
-    bottom_right_x = int(x_center + box_width / 2)
-    bottom_right_y = int(y_center + box_height / 2)
-    # Draw the bounding box
-    color = (155, 255, 0) if label == 0 else (255, 0, 255)  # Green for label Fertilized, Purple for label unfertilized
-    cv2.rectangle(image, (top_left_x, top_left_y), (bottom_right_x, bottom_right_y), color, 5)
 
-# Convert BGR to RGB for displaying with matplotlib
-image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+def addPredictionAnnotations(pred_image_path,
+                             progress_callback: typing.Optional[Callable[[int], None]] = None):
+    # Create a prediction folder
+    annotated_image_path = os.path.join(
+        pred_image_path, 'predict', 'annotated_images')
+    os.makedirs(annotated_image_path, exist_ok=True)
 
-# Display the image with bounding boxes
-plt.figure(figsize=(20, 20))
-plt.imshow(image_rgb)
-plt.axis('off')
-plt.tight_layout()
+    processed_images = 0
+    for image_path in os.listdir(pred_image_path):
+        if os.path.isdir(os.path.join(pred_image_path, image_path)):
+            continue
+        # Load the image
+        name = os.path.splitext(image_path)[0]
+        name = name.split("/")[-1]
+        image = Image.open(os.path.join(
+            pred_image_path, image_path)).convert("RGBA")
+        image_draw = ImageDraw.Draw(image, mode="RGBA")
+        image_width, image_height = image.size
 
-plt.savefig(f"{pred_image_path}/{name}_prediction.jpg", dpi=300)
+        # Load and parse the text file
+        coordinates_path = os.path.join(
+            pred_image_path, 'predict', 'labels', f'{name}.txt')
+        with open(coordinates_path, 'r') as file:
+            lines = file.readlines()
 
+        # Draw bounding boxes
+        for line in lines:
+            label, x_center, y_center, width, height, confidence = map(
+                float, line.strip().split())
+            # Convert normalized coordinates to actual coordinates
+            x_center = int(x_center * image_width)
+            y_center = int(y_center * image_height)
+            box_width = int(width * image_width)
+            box_height = int(height * image_height)
+            annotation_bounding_box = centerToBoundingBox(
+                (x_center, y_center), (box_width, box_height))
+            # Draw the bounding box
+            # Green for label Fertilized, Purple for label unfertilized
+            color = (155, 255, 0) if label == 0 else (255, 0, 255)
+            image_draw.rectangle(annotation_bounding_box,
+                                 outline=color, width=10)
+
+        image.save(f"{annotated_image_path}/{name}.png")
+        processed_images += 1
+
+        if progress_callback is not None:
+            progress_callback(processed_images)
