@@ -16,7 +16,8 @@ from PyQt6.QtWidgets import (
 
 class App():
     def __init__(self):
-        self.working_dir = os.path.join(os.path.dirname(__file__),".YOLOEggDetection")
+        self.working_dir = os.path.join(
+            os.path.dirname(__file__), ".YOLOEggDetection")
         self.valid_extensions = [".jpg", ".jpeg", ".png"]
         self.images_dir = os.path.join(self.working_dir, 'test_images')
         self.images_loaded = False
@@ -39,7 +40,7 @@ class App():
         Set the model at index idx from all the available model as
         the selected model for predictions
         '''
-        if idx > 0 and idx < len(self.getAvailableModels()):
+        if idx >= 0 and idx < len(self.getAvailableModels()):
             self.selected_model_idx = idx
         return self.selected_model_idx
 
