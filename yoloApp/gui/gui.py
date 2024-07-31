@@ -36,33 +36,32 @@ SELECT_DIRECTORY_TEXT = "Select directory"
 class AppGUI(QWidget):
     ANNOTATED_IMG_SIZE = 500
     INTRO_TEXT = """
-    <h2>Egg Counting: Fertilized vs Unfertilized</h2>
-    <br><br>
-    <b>The tool allows users to count the number of
-    fertilized vs unfertilized eggs.</b>
-    <br><br>
+    <h2>Frog Embryo Counter </h2>
+    <b>Count and classify fertilized vs unfertilized Xenopus laevis embryos</b>
+    <br>
     <ol>
-    <li>To generate predictions, upload a ZIP file containing images</li>
-    <li>Upon clicking the 'Run YOLO Model' button, the images will be processed
-     using YOLO for object detection and a bounding box script.</li>
-    <li>The predicted classifications will be shown here,
-     along with annotated images</li>
+    <li>To generate predictions, upload a ZIP file with all the images.</li>
+    <li>Select a model to use for embryo count predictions.</li>
+    <li>Predicted counts will be shown on the interface.</li>
+    <li>After processing is done, predictions can be downloaded using the "Download as CSV" button.</li>
+    <li>Images will be annotated with predicted bounding boxes, and displayed on the interface.</li>
     </ol>
     """
 
     def __init__(self, appController):
         super().__init__()
         self.controller = appController
-        self.title = 'YOLO Egg Detection'
+        self.title = 'Embryo Counter'
         self.left = 10
         self.top = 10
         screen = self.screen()
         if screen:
             width = screen.availableSize().width()
             height = screen.availableSize().height()
-            self.setFixedSize(min(1200,int(width*0.8)), min(800,int(height*0.8)))
+            self.setFixedSize(min(1300, int(width*0.8)),
+                              min(800, int(height*0.8)))
         else:
-            self.setFixedSize(1200, 800)
+            self.setFixedSize(1300, 800)
         self.setSizePolicy(QSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
         self.setWindowIcon(
